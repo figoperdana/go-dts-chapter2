@@ -1,19 +1,21 @@
 package routers
 
 import (
-	"tugas7/controllers"
-
+	"tugas8/controllers"
+	"tugas8/repository"
 	"github.com/gin-gonic/gin"
 )
 
-func StartServer() *gin.Engine {
+func SetupRouter(repo *repository.BookRepository) *gin.Engine {
 	router := gin.Default()
 
-	router.POST("/books", controllers.CreateBook)
-	router.PUT("/books/:bookID", controllers.UpdateBook)
-	router.GET("/books/:bookID", controllers.GetBook)
-	router.GET("/books", controllers.GetAllBooks)
-	router.DELETE("/books/:bookID", controllers.DeleteBook)
- 
-    return router
+	bookController := controllers.NewBookController(repo)
+
+	router.GET("/books", bookController.FindAll)
+	router.GET("/books/:id", bookController.FindByID)
+	router.POST("/books", bookController.Create)
+	router.PUT("/books/:id", bookController.Update)
+	router.DELETE("/books/:id", bookController.Delete)
+
+	return router
 }

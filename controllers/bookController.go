@@ -1,171 +1,89 @@
 package controllers
 
 import (
-	"fmt"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-	"database/sql"
 	"strconv"
 
-	"tugas7/config"
+	"tugas8/models"
+	"tugas8/repository"
+	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
-type Book struct {
-	BookID int    `json:"id"` // json tag
-	Title  string `json:"title"`   // json tag
-	Author string `json:"author"`  // json tag
-	Description   string `json:"Description"`    // json tag
+type BookController struct {
+	repo *repository.BookRepository
 }
 
-var books = []Book{}
+func NewBookController(repo *repository.BookRepository) *BookController {
+	return &BookController{repo}
+}
 
-func CreateBook(ctx *gin.Context) {
-	var newBook Book
-
-	if err := ctx.ShouldBindJSON(&newBook); err != nil {
-		ctx.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	db := config.Connect()
-	defer db.Close()
-
-	err := db.QueryRow("INSERT INTO books (title, author, Description) VALUES ($1, $2, $3) RETURNING id", newBook.Title, newBook.Author, newBook.Description).Scan(&newBook.BookID)
+func (c *BookController) FindAll(ctx *gin.Context) {
+	books, err := c.repo.FindAll()
 	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	ctx.JSON(http.StatusCreated, gin.H{"book": newBook})
+	ctx.JSON(http.StatusOK, books)
 }
 
-func UpdateBook(ctx *gin.Context) {
-	bookID, err := strconv.Atoi(ctx.Param("bookID"))
+func (c *BookController) FindByID(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
-		ctx.AbortWithError(http.StatusBadRequest, err)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid book ID"})
 		return
 	}
-
-	var updatedBook Book
-	if err := ctx.ShouldBindJSON(&updatedBook); err != nil {
-		ctx.AbortWithError(http.StatusBadRequest, err)
-		return
-	}
-
-	db := config.Connect()
-	defer db.Close()
-
-	result, err := db.Exec("UPDATE books SET title=$1, author=$2, Description=$3 WHERE id=$4", updatedBook.Title, updatedBook.Author, updatedBook.Description, bookID)
+	book, err := c.repo.FindByID(uint(id))
 	if err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if rowsAffected == 0 {
-	ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{
-		"error_status":  "Data Not Found",
-		"error_message": fmt.Sprintf("Book with id %d not found", bookID),
-	})
-	return
-}
-
-ctx.JSON(http.StatusOK, gin.H{
-	"message": fmt.Sprintf("Book with id %d has been successfully updated", bookID),
-})
-}
-
-func GetBook(ctx *gin.Context) {
-bookID, err := strconv.Atoi(ctx.Param("bookID"))
-if err != nil {
-ctx.AbortWithError(http.StatusBadRequest, err)
-return
-}
-
-db := config.Connect()
-defer db.Close()
-
-var bookData Book
-err = db.QueryRow("SELECT id, title, author, Description FROM books WHERE id=$1", bookID).Scan(&bookData.BookID, &bookData.Title, &bookData.Author, &bookData.Description)
-if err == sql.ErrNoRows {
-	ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{
-		"error_status":  "Data Not Found",
-		"error_message": fmt.Sprintf("Book with id %d not found", bookID),
-	})
-	return
-} else if err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
-}
-
-ctx.JSON(http.StatusOK, gin.H{
-	"book": bookData,
-})
-}
-
-func DeleteBook(ctx *gin.Context) {
-bookID, err := strconv.Atoi(ctx.Param("bookID"))
-if err != nil {
-ctx.AbortWithError(http.StatusBadRequest, err)
-return
-}
-
-db := config.Connect()
-defer db.Close()
-
-result, err := db.Exec("DELETE FROM books WHERE id=$1", bookID)
-if err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
-}
-
-rowsAffected, err := result.RowsAffected()
-if err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
-}
-
-if rowsAffected == 0 {
-	ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{
-		"error_status":  "Data Not Found",
-		"error_message": fmt.Sprintf("Book with id %d not found", bookID),
-	})
-	return
-}
-
-ctx.JSON(http.StatusOK, gin.H{
-	"message": fmt.Sprintf("Book with id %d has been successfully deleted", bookID),
-})
-}
-
-func GetAllBooks(ctx *gin.Context) {
-db := config.Connect()
-defer db.Close()
-rows, err := db.Query("SELECT id, title, author, Description FROM books")
-if err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
-}
-defer rows.Close()
-
-var books []Book
-for rows.Next() {
-	var book Book
-	err := rows.Scan(&book.BookID, &book.Title, &book.Author, &book.Description)
-	if err != nil {
-		ctx.AbortWithError(http.StatusInternalServerError, err)
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
 		return
 	}
-	books = append(books, book)
+	ctx.JSON(http.StatusOK, book)
 }
 
-if err := rows.Err(); err != nil {
-	ctx.AbortWithError(http.StatusInternalServerError, err)
-	return
+func (c *BookController) Create(ctx *gin.Context) {
+	var book models.Book
+	if err := ctx.ShouldBindJSON(&book); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := c.repo.Create(&book); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, "Created")
 }
 
-ctx.JSON(http.StatusOK, gin.H{
-	"books": books,
-})
+func (c *BookController) Update(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid book ID"})
+		return
+	}
+	book, err := c.repo.FindByID(uint(id))
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
+		return
+	}
+	if err := ctx.ShouldBindJSON(&book); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := c.repo.Update(book); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, "Updated")
+}
+
+func (c *BookController) Delete(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid book ID"})
+		return
+	}
+	if err := c.repo.Delete(uint(id)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, "Deleted")
 }
